@@ -59,6 +59,11 @@ export class Parser {
     this.context = this.initialContext()
     this.exprAllowed = true
 
+    // Set when the current token is a keyword that is being used in an
+    // identifier-name position (as the property after `.` or `?.`), and
+    // thus must not be treated as a keyword by context tracking.
+    this.keywordInNamePosition = false
+
     // Figure out if it's a module code.
     this.inModule = options.sourceType === "module"
     this.strict = this.inModule || this.strictDirective(this.pos)

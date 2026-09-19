@@ -29929,3 +29929,99 @@ test(`typeof async function f(){}
 
 testFail(`typeof async function f(){}
 /foo/`, "Unexpected token (2:5)", { ecmaVersion: 8, locations: true })
+
+// Keywords used as property names must not influence the tokenizer's
+// decision whether `/` starts a regular expression or is division.
+// https://github.com/acornjs/acorn/issues/1266
+
+;["if", "while", "for", "with", "return", "function"].forEach(function(keyword) {
+  testAssert("foo." + keyword + "() / 2", function(ast) {
+    if (ast.body.length !== 1)
+      return "expected a single statement, got " + ast.body.length
+    var expr = ast.body[0].expression
+    if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+      return "expected a division BinaryExpression, got " + expr.type
+    if (expr.right.type !== "Literal" || expr.right.value !== 2)
+      return "expected right-hand side literal 2"
+  }, { ecmaVersion: 6, locations: true })
+})
+
+// Non-keyword and non-affected keyword property names are control cases
+// that were already parsed correctly and must keep working.
+;["iff", "class"].forEach(function(name) {
+  testAssert("foo." + name + "() / 2", function(ast) {
+    if (ast.body.length !== 1)
+      return "expected a single statement, got " + ast.body.length
+    var expr = ast.body[0].expression
+    if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+      return "expected a division BinaryExpression, got " + expr.type
+  }, { ecmaVersion: 6, locations: true })
+})
+
+// Across a line break, no ASI must occur: the slash continues the
+// previous expression instead of starting a regular expression.
+testAssert("foo.if()\n/a/g.test(x)", function(ast) {
+  if (ast.body.length !== 1)
+    return "expected a single statement (no ASI), got " + ast.body.length
+  var expr = ast.body[0].expression
+  if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+    return "expected a division BinaryExpression, got " + expr.type
+  // By precedence this is `((foo.if() / a) / g.test(x))`, crucially
+  // without any regexp node and without ASI.
+  if (expr.left.type !== "BinaryExpression" || expr.left.left.type !== "CallExpression")
+    return "expected the call to be the leftmost operand, got " + expr.type
+  if (JSON.stringify(ast).indexOf("regexp") !== -1)
+    return "no regular expression literal should appear in the AST"
+}, { ecmaVersion: 6, locations: true })
+
+// The same issue exists with optional chaining (`?.`).
+testAssert("foo?.if() / 2", function(ast) {
+  if (ast.body.length !== 1)
+    return "expected a single statement, got " + ast.body.length
+  var expr = ast.body[0].expression
+  if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+    return "expected a division BinaryExpression, got " + expr.type
+}, { ecmaVersion: 2020, locations: true })
+
+testAssert("foo?.if()\n/a/g.test(x)", function(ast) {
+  if (ast.body.length !== 1)
+    return "expected a single statement (no ASI), got " + ast.body.length
+  var expr = ast.body[0].expression
+  if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+    return "expected a division BinaryExpression, got " + expr.type
+}, { ecmaVersion: 2020, locations: true })
+
+// `function`/`class` after a dot must not push a tokenizer context, and
+// a following `*` must not be misread as a generator marker.
+testAssert("x.function * 2", function(ast) {
+  if (ast.body.length !== 1)
+    return "expected a single statement, got " + ast.body.length
+  var expr = ast.body[0].expression
+  if (expr.type !== "BinaryExpression" || expr.operator !== "*")
+    return "expected a multiplication BinaryExpression, got " + expr.type
+}, { ecmaVersion: 6, locations: true })
+
+testAssert("{ x.function * 2 } /a/", function(ast) {
+  if (ast.body.length !== 2)
+    return "expected a block followed by a regexp statement, got " + ast.body.length
+  if (ast.body[0].type !== "BlockStatement")
+    return "expected first statement to be a BlockStatement, got " + ast.body[0].type
+  if (ast.body[1].expression.type !== "Literal" ||
+      ast.body[1].expression.raw !== "/a/")
+    return "expected second statement to be the regular expression literal /a/"
+}, { ecmaVersion: 6, locations: true })
+
+// Negative controls: when the keywords are real statement keywords, the
+// slash must still be read as a regular expression.
+testFail("if (x) {} /2", "Unterminated regular expression (1:11)", { ecmaVersion: 6, locations: true })
+testFail("while (x) {} /2", "Unterminated regular expression (1:14)", { ecmaVersion: 6, locations: true })
+
+// Keyword followed by a slash without a call stays division-like too
+// (it is an ordinary member expression).
+testAssert("foo.if / 2", function(ast) {
+  var expr = ast.body[0].expression
+  if (expr.type !== "BinaryExpression" || expr.operator !== "/")
+    return "expected a division BinaryExpression, got " + expr.type
+  if (expr.left.type !== "MemberExpression" || expr.left.property.name !== "if")
+    return "expected left operand to be `foo.if`"
+}, { ecmaVersion: 6, locations: true })

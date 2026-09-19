@@ -49,7 +49,7 @@ pp.braceIsBlock = function(prevType) {
   // The check for `tt.name && exprAllowed` detects whether we are
   // after a `yield` or `of` construct. See the `updateContext` for
   // `tt.name`.
-  if (prevType === tt._return || prevType === tt.name && this.exprAllowed)
+  if (prevType === tt._return && !this.keywordInNamePosition || prevType === tt.name && this.exprAllowed)
     return lineBreak.test(this.input.slice(this.lastTokEnd, this.start))
   if (prevType === tt._else || prevType === tt.semi || prevType === tt.eof || prevType === tt.parenR || prevType === tt.arrow)
     return true
@@ -71,12 +71,16 @@ pp.inGeneratorContext = function() {
 
 pp.updateContext = function(prevType) {
   let update, type = this.type
-  if (type.keyword && prevType === tt.dot)
-    this.exprAllowed = false
+  if (type.keyword && (prevType === tt.dot || prevType === tt.questionDot))
+    this.keywordInNamePosition = true
   else if (update = type.updateContext)
     update.call(this, prevType)
   else
     this.exprAllowed = type.beforeExpr
+  // The flag, if set by the previous token, only applies to the token
+  // immediately following it.
+  if (!(type.keyword && (prevType === tt.dot || prevType === tt.questionDot)))
+    this.keywordInNamePosition = false
 }
 
 // Used to handle egde cases when token context could not be inferred correctly during tokenization phase
@@ -112,7 +116,8 @@ tt.dollarBraceL.updateContext = function() {
 }
 
 tt.parenL.updateContext = function(prevType) {
-  let statementParens = prevType === tt._if || prevType === tt._for || prevType === tt._with || prevType === tt._while
+  let statementParens = !this.keywordInNamePosition &&
+    (prevType === tt._if || prevType === tt._for || prevType === tt._with || prevType === tt._while)
   this.context.push(statementParens ? types.p_stat : types.p_expr)
   this.exprAllowed = true
 }
@@ -122,7 +127,10 @@ tt.incDec.updateContext = function() {
 }
 
 tt._function.updateContext = tt._class.updateContext = function(prevType) {
-  if (prevType.beforeExpr && prevType !== tt._else &&
+  if (this.keywordInNamePosition) {
+    // No context is pushed: the keyword is consumed as a property name
+    // (e.g. `foo.function`), so it is not actually a function or class.
+  } else if (prevType.beforeExpr && prevType !== tt._else &&
       !(prevType === tt.semi && this.curContext() !== types.p_stat) &&
       !(prevType === tt._return && lineBreak.test(this.input.slice(this.lastTokEnd, this.start))) &&
       !((prevType === tt.colon || prevType === tt.braceL) && this.curContext() === types.b_stat))
@@ -141,7 +149,7 @@ tt.backQuote.updateContext = function() {
 }
 
 tt.star.updateContext = function(prevType) {
-  if (prevType === tt._function) {
+  if (prevType === tt._function && !this.keywordInNamePosition) {
     let index = this.context.length - 1
     if (this.context[index] === types.f_expr)
       this.context[index] = types.f_expr_gen
@@ -153,7 +161,7 @@ tt.star.updateContext = function(prevType) {
 
 tt.name.updateContext = function(prevType) {
   let allowed = false
-  if (this.options.ecmaVersion >= 6 && prevType !== tt.dot) {
+  if (this.options.ecmaVersion >= 6 && prevType !== tt.dot && prevType !== tt.questionDot) {
     if (this.value === "of" && !this.exprAllowed ||
         this.value === "yield" && this.inGeneratorContext())
       allowed = true

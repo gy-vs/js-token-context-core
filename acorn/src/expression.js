@@ -1053,10 +1053,10 @@ pp.parseIdentNode = function() {
 
     // To fix https://github.com/acornjs/acorn/issues/575
     // `class` and `function` keywords push new context into this.context.
-    // But there is no chance to pop the context if the keyword is consumed as an identifier such as a property name.
-    // If the previous token is a dot, this does not apply because the context-managing code already ignored the keyword
+    // But there is no chance to pop the context if the keyword is consumed as an identifier (e.g. a property name or a label).
+    // When the keyword follows `.` or `?.`, the context-managing code already ignored it.
     if ((node.name === "class" || node.name === "function") &&
-      (this.lastTokEnd !== this.lastTokStart + 1 || this.input.charCodeAt(this.lastTokStart) !== 46)) {
+        !this.keywordInNamePosition) {
       this.context.pop()
     }
   } else {
