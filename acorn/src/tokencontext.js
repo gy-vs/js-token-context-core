@@ -117,6 +117,11 @@ tt.parenL.updateContext = function(prevType) {
   this.exprAllowed = true
 }
 
+tt.colon.updateContext = function() {
+  if (this.curContext().token === "function") this.context.pop()
+  this.exprAllowed = true
+}
+
 tt.incDec.updateContext = function() {
   // tokExprAllowed stays unchanged
 }

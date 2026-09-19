@@ -29491,6 +29491,113 @@ test("for (; class {} / 1;);", {}, {ecmaVersion: 6})
 test("for (;; function () {} / 1);", {}, {ecmaVersion: 6})
 test("for (;; class {} / 1);", {}, {ecmaVersion: 6})
 
+// Keywords used as property names must not keep the tokenizer in a
+// statement context, so a slash after a call on such a property is a
+// division, not the start of a regular expression literal.
+for (const name of ["if", "while", "for", "with"]) {
+  test("foo." + name + "() / 2", {}, {ecmaVersion: 6})
+}
+
+// Non-keyword identifiers and keywords without statement parens were
+// never affected; keep them as control cases.
+test("foo.iff() / 2", {}, {ecmaVersion: 6})
+test("foo.class() / 2", {}, {ecmaVersion: 6})
+
+// A newline before the slash must not trigger automatic semicolon
+// insertion here—the slash continues the expression. Since the
+// expression is continued, the slashes are divisions (so this parses as
+// `foo.if() / a / g.test(x)`) rather than as a regexp literal followed
+// by a second statement.
+test("foo.if()\n/a/g.test(x)", {
+  type: "Program",
+  start: 0,
+  end: 21,
+  body: [{
+    type: "ExpressionStatement",
+    start: 0,
+    end: 21,
+    expression: {
+      type: "BinaryExpression",
+      start: 0,
+      end: 21,
+      left: {
+        type: "BinaryExpression",
+        start: 0,
+        end: 11,
+        left: {
+          type: "CallExpression",
+          start: 0,
+          end: 8,
+          callee: {
+            type: "MemberExpression",
+            start: 0,
+            end: 6,
+            object: {type: "Identifier", start: 0, end: 3, name: "foo"},
+            property: {type: "Identifier", start: 4, end: 6, name: "if"},
+            computed: false
+          },
+          arguments: []
+        },
+        operator: "/",
+        right: {type: "Identifier", start: 10, end: 11, name: "a"}
+      },
+      operator: "/",
+      right: {
+        type: "CallExpression",
+        start: 12,
+        end: 21,
+        callee: {
+          type: "MemberExpression",
+          start: 12,
+          end: 18,
+          object: {type: "Identifier", start: 12, end: 13, name: "g"},
+          property: {type: "Identifier", start: 14, end: 18, name: "test"},
+          computed: false
+        },
+        arguments: [{type: "Identifier", start: 19, end: 20, name: "x"}]
+      }
+    }
+  }],
+  sourceType: "script"
+}, {ecmaVersion: 6})
+
+// Same class of issue through optional chaining and member chains.
+test("foo?.if() / 2", {}, {ecmaVersion: 2020})
+test("foo.bar.for() / 2", {}, {ecmaVersion: 6})
+
+// Keywords used as property names inside object/class members still
+// parse, and a slash following such expressions is a division.
+test("({if() {}} / 2)", {}, {ecmaVersion: 6})
+test("({if: 1}.if / 2)", {}, {ecmaVersion: 6})
+test("(class {if() {}}) / 2", {}, {ecmaVersion: 6})
+test("x = class {for() {}} / 2", {}, {ecmaVersion: 6})
+
+// A slash after an actual `if` statement's closing paren is still a regexp.
+test("if (x) /a/.test(y)", {}, {ecmaVersion: 6})
+test("for (x; y; z) /a/.test(y)", {}, {ecmaVersion: 6})
+
+// When keywords are consumed as identifiers, the keyword token itself
+// must still be reported as a keyword token to onToken consumers.
+testAssert("function f() { new.target }", function() {
+  var keywords = []
+  acorn.parse("function f() { new.target }", {
+    ecmaVersion: 6,
+    onToken: function(tok) { if (tok.type.keyword) keywords.push(tok.type.keyword) }
+  })
+  if (keywords.join(",") !== "function,new")
+    return "Expected keyword tokens 'function,new', got '" + keywords.join(",") + "'"
+}, {ecmaVersion: 6, loose: false})
+testAssert("import.meta", function() {
+  var keywords = []
+  acorn.parse("import.meta", {
+    ecmaVersion: 2020,
+    sourceType: "module",
+    onToken: function(tok) { if (tok.type.keyword) keywords.push(tok.type.keyword) }
+  })
+  if (keywords.join(",") !== "import")
+    return "Expected keyword token 'import', got '" + keywords.join(",") + "'"
+}, {ecmaVersion: 2020, sourceType: "module", loose: false})
+
 for (const ecmaVersion of [5, 6]) {
   test("a = (\r\n  b,\r\n  c\r\n)", {
     type: "Program",

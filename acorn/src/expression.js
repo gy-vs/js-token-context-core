@@ -519,12 +519,14 @@ pp.parseExprImport = function(forNew) {
   // Consume `import` as an identifier for `import.meta`.
   // Because `this.parseIdent(true)` doesn't check escape sequences, it needs the check of `this.containsEsc`.
   if (this.containsEsc) this.raiseRecoverable(this.start, "Escape sequence in keyword import")
-  const meta = this.parseIdent(true)
+  this.next()
 
   if (this.type === tt.parenL && !forNew) {
     return this.parseDynamicImport(node)
   } else if (this.type === tt.dot) {
-    node.meta = meta
+    const meta = this.startNodeAt(node.start, node.loc && node.loc.start)
+    meta.name = "import"
+    node.meta = this.finishNode(meta, "Identifier")
     return this.parseImportMeta(node)
   } else {
     this.unexpected()
@@ -672,9 +674,13 @@ const empty = []
 pp.parseNew = function() {
   if (this.containsEsc) this.raiseRecoverable(this.start, "Escape sequence in keyword new")
   let node = this.startNode()
-  let meta = this.parseIdent(true)
-  if (this.options.ecmaVersion >= 6 && this.eat(tt.dot)) {
-    node.meta = meta
+  this.next()
+  if (this.options.ecmaVersion >= 6 && this.type === tt.dot) {
+    let meta = this.startNodeAt(node.start, node.startLoc)
+    meta.name = "new"
+    node.meta = this.finishNode(meta, "Identifier")
+    this.next()
+
     let containsEsc = this.containsEsc
     node.property = this.parseIdent(true)
     if (node.property.name !== "target")
@@ -1059,6 +1065,12 @@ pp.parseIdentNode = function() {
       (this.lastTokEnd !== this.lastTokStart + 1 || this.input.charCodeAt(this.lastTokStart) !== 46)) {
       this.context.pop()
     }
+    // Keywords such as `if` or `for` also influence the tokenizer's
+    // context (see the parenL updateContext), and must be made to look
+    // like ordinary identifiers when the parser consumes them as such,
+    // so that e.g. a slash after `foo.if()` is tokenized as a division.
+    // https://github.com/acornjs/acorn/issues/1256
+    this.type = tt.name
   } else {
     this.unexpected()
   }

@@ -519,6 +519,10 @@ lp.parsePropertyAccessor = function() {
 lp.parseIdent = function() {
   let name = this.tok.type === tt.name ? this.tok.value : this.tok.type.keyword
   if (!name) return this.dummyIdent()
+  // Keyword tokens consumed as identifiers must not keep influencing the
+  // tokenizer's context (e.g. the parens after `foo.if`), otherwise a
+  // following slash is read as a regular expression.
+  if (this.tok.type.keyword) this.toks.type = tt.name
   let node = this.startNode()
   this.next()
   node.name = name
